@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.1)
 project(ddynamic_reconfigure)
 
 find_package(catkin REQUIRED COMPONENTS
@@ -6,7 +6,9 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp
 )
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++0x")
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 catkin_package(
@@ -19,7 +21,7 @@ include_directories(
   include
 )
 include_directories(
-  SYSTEM 
+  SYSTEM
   ${catkin_INCLUDE_DIRS}
 )
 
@@ -59,7 +61,7 @@ if (CATKIN_ENABLE_TESTING)
     target_link_libraries(ddynamic_reconfigure-test
                                 ${PROJECT_NAME})
     endif()
-    
+
     add_executable(ddynamic_reconfigure_auto_update_test
         test/ddynamic_reconfigure_auto_update_test.cpp)
     target_link_libraries(ddynamic_reconfigure_auto_update_test ${PROJECT_NAME}
