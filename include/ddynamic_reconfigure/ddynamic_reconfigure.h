@@ -123,8 +123,9 @@ public:
   /**
    * @brief publishServicesTopics starts the server once all the needed variables are
    * registered
+   * @param useTabsForGroups will display groups as tabs, instead of groups
    */
-  virtual void publishServicesTopics();
+  virtual void publishServicesTopics(bool useTabsForGroups = true);
 
   virtual void updatePublishedInformation();
 
@@ -161,8 +162,8 @@ public:
 protected:
   template <typename T>
   std::vector<std::unique_ptr<RegisteredParam<T>>> &getRegisteredVector();
-
-  virtual dynamic_reconfigure::ConfigDescription generateConfigDescription() const;
+  template <typename T>
+  void addToConfigDescription(const RegisteredParam<T>& rp);
 
   virtual dynamic_reconfigure::Config generateConfig();
 
@@ -190,9 +191,11 @@ protected:
   std::vector<std::unique_ptr<RegisteredParam<double>>> registered_double_;
   std::vector<std::unique_ptr<RegisteredParam<bool>>> registered_bool_;
   std::vector<std::unique_ptr<RegisteredParam<std::string>>> registered_string_;
-  std::vector<std::string> config_groups_;
 
   UserCallbackType user_callback_;
+
+  dynamic_reconfigure::ConfigDescription config_description;
+  std::map<std::string, dynamic_reconfigure::Group> groups;
 
   ros::Timer pub_config_timer_;
   dynamic_reconfigure::Config last_config_;

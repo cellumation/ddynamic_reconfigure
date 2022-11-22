@@ -8,6 +8,7 @@ DDynamicReconfigure::DDynamicReconfigure(const ros::NodeHandle &nh, bool auto_up
   pub_config_timer_ =
       nh.createTimer(ros::Duration(5.0),
                      boost::bind(&DDynamicReconfigure::updatePublishedInformation, this));
+  groups.emplace("Default", dynamic_reconfigure::Group());
 }
 
 DDynamicReconfigure::~DDynamicReconfigure()
@@ -17,18 +18,35 @@ DDynamicReconfigure::~DDynamicReconfigure()
   descr_pub_.shutdown();
 }
 
-void DDynamicReconfigure::publishServicesTopics()
+void DDynamicReconfigure::publishServicesTopics(bool useTabsForGroups)
 {
   descr_pub_ = node_handle_.advertise<dynamic_reconfigure::ConfigDescription>(
       "parameter_descriptions", 1, true);
-  const dynamic_reconfigure::ConfigDescription config_description = generateConfigDescription();
-  descr_pub_.publish(config_description);
 
-  config_groups_.clear();
-  for (const auto &g : config_description.groups)
+  size_t i = 1;
+  for (auto &group : groups)
   {
-    config_groups_.push_back(g.name);
+    group.second.name = group.first;
+    if (group.first != "Default")
+    {
+      if (useTabsForGroups)
+      {
+          group.second.type = "tab";
+      }
+      group.second.id = i++;
+    }
+    config_description.groups.push_back(group.second);
+
+    dynamic_reconfigure::GroupState gs;
+    gs.id = group.second.id;
+    gs.name = group.second.name;
+    gs.state = true;
+    config_description.dflt.groups.push_back(gs);
+    config_description.min.groups.push_back(gs);
+    config_description.max.groups.push_back(gs);
   }
+
+  descr_pub_.publish(config_description);
 
   update_pub_ =
       node_handle_.advertise<dynamic_reconfigure::Config>("parameter_updates", 1, true);
@@ -65,6 +83,69 @@ std::vector<std::unique_ptr<RegisteredParam<std::string>>> &DDynamicReconfigure:
   return registered_string_;
 }
 
+template <>
+void DDynamicReconfigure::addToConfigDescription<int>(const RegisteredParam<int>& ri)
+{
+  groups[ri.group_].parameters.push_back(ri.getParamDescription());
+
+  // Max min def
+  dynamic_reconfigure::IntParameter ip;
+  ip.name = ri.name_;
+  ip.value = ri.getCurrentValue();
+  config_description.dflt.ints.push_back(ip);
+  ip.value = ri.max_value_;
+  config_description.max.ints.push_back(ip);
+  ip.value = ri.min_value_;
+  config_description.min.ints.push_back(ip);
+}
+
+template <>
+void DDynamicReconfigure::addToConfigDescription<double>(const RegisteredParam<double>& rd)
+{
+    groups[rd.group_].parameters.push_back(rd.getParamDescription());
+
+    // Max min def
+    dynamic_reconfigure::DoubleParameter dp;
+    dp.name = rd.name_;
+    dp.value = rd.getCurrentValue();
+    config_description.dflt.doubles.push_back(dp);
+    dp.value = rd.max_value_;
+    config_description.max.doubles.push_back(dp);
+    dp.value = rd.min_value_;
+    config_description.min.doubles.push_back(dp);
+}
+
+template <>
+void DDynamicReconfigure::addToConfigDescription<bool>(const RegisteredParam<bool>& rb)
+{
+    groups[rb.group_].parameters.push_back(rb.getParamDescription());
+
+    // Max min def
+    dynamic_reconfigure::BoolParameter bp;
+    bp.name = rb.name_;
+    bp.value = rb.getCurrentValue();
+    config_description.dflt.bools.push_back(bp);
+    bp.value = rb.max_value_;
+    config_description.max.bools.push_back(bp);
+    bp.value = rb.min_value_;
+    config_description.min.bools.push_back(bp);
+}
+
+template <>
+void DDynamicReconfigure::addToConfigDescription<std::string>(const RegisteredParam<std::string>& rs)
+{
+    groups[rs.group_].parameters.push_back(rs.getParamDescription());
+
+    // Max min def
+    dynamic_reconfigure::StrParameter sp;
+    sp.name = rs.name_;
+    sp.value = rs.getCurrentValue();
+    config_description.dflt.strs.push_back(sp);
+    sp.value = rs.max_value_;
+    config_description.max.strs.push_back(sp);
+    sp.value = rs.min_value_;
+    config_description.min.strs.push_back(sp);
+}
 
 template <typename T>
 void DDynamicReconfigure::registerVariable(const std::string &name, T *variable,
@@ -93,6 +174,7 @@ void DDynamicReconfigure::registerVariable(const std::string &name, T *variable,
   attemptGetParam(node_handle_, name, *variable, *variable);
   getRegisteredVector<T>().push_back(boost::make_unique<PointerRegisteredParam<T>>(
       name, description, min, max, variable, callback, std::map<std::string, T>(), "", group));
+  addToConfigDescription(*getRegisteredVector<T>().back());
 }
 
 template <typename T>
@@ -108,6 +190,7 @@ void DDynamicReconfigure::registerEnumVariable(const std::string &name, T *varia
   attemptGetParam(node_handle_, name, *variable, *variable);
   getRegisteredVector<T>().push_back(boost::make_unique<PointerRegisteredParam<T>>(
       name, description, min, max, variable, callback, enum_dict, enum_description, group));
+  addToConfigDescription(*getRegisteredVector<T>().back());
 }
 
 template <typename T>
@@ -119,6 +202,7 @@ void DDynamicReconfigure::registerVariable(const std::string &name, T current_va
   attemptGetParam(node_handle_, name, current_value, current_value);
   getRegisteredVector<T>().push_back(boost::make_unique<CallbackRegisteredParam<T>>(
       name, description, min, max, current_value, callback, std::map<std::string, T>(), "", group));
+  addToConfigDescription(*getRegisteredVector<T>().back());
 }
 
 
@@ -135,6 +219,7 @@ void DDynamicReconfigure::registerEnumVariable(const std::string &name, T curren
   attemptGetParam(node_handle_, name, current_value, current_value);
   getRegisteredVector<T>().push_back(boost::make_unique<CallbackRegisteredParam<T>>(
       name, description, min, max, current_value, callback, enum_dict, enum_description, group));
+  addToConfigDescription(*getRegisteredVector<T>().back());
 }
 
 template <typename ParamType>
@@ -318,121 +403,6 @@ void DDynamicReconfigure::RegisterVariable(bool *variable, std::string id)
   registerVariable(id, variable, "");
 }
 
-dynamic_reconfigure::ConfigDescription DDynamicReconfigure::generateConfigDescription() const
-{
-  dynamic_reconfigure::ConfigDescription config_description;
-
-  std::map<std::string, dynamic_reconfigure::Group> groups;
-
-  for (unsigned int i = 0; i < registered_int_.size(); ++i)
-  {
-    const RegisteredParam<int> &ri = *registered_int_[i];
-    dynamic_reconfigure::ParamDescription p = ri.getParamDescription();
-
-    auto &gp = groups[ri.group_];
-    gp.parameters.push_back(p);
-
-    // Max min def
-    dynamic_reconfigure::IntParameter ip;
-    ip.name = ri.name_;
-    ip.value = ri.getCurrentValue();
-    config_description.dflt.ints.push_back(ip);
-    ip.value = ri.max_value_;
-    config_description.max.ints.push_back(ip);
-    ip.value = ri.min_value_;
-    config_description.min.ints.push_back(ip);
-  }
-
-  for (unsigned int i = 0; i < registered_double_.size(); ++i)
-  {
-    const RegisteredParam<double> &rd = *registered_double_[i];
-    dynamic_reconfigure::ParamDescription p = rd.getParamDescription();
-
-    auto &gp = groups[rd.group_];
-    gp.parameters.push_back(p);
-    // Max min def
-    dynamic_reconfigure::DoubleParameter dp;
-    dp.name = rd.name_;
-    dp.value = rd.getCurrentValue();
-    config_description.dflt.doubles.push_back(dp);
-    dp.value = rd.max_value_;
-    config_description.max.doubles.push_back(dp);
-    dp.value = rd.min_value_;
-    config_description.min.doubles.push_back(dp);
-  }
-
-  for (unsigned int i = 0; i < registered_bool_.size(); ++i)
-  {
-    const RegisteredParam<bool> &rb = *registered_bool_[i];
-    dynamic_reconfigure::ParamDescription p = rb.getParamDescription();
-
-    auto &gp = groups[rb.group_];
-    gp.parameters.push_back(p);
-
-    // Max min def
-    dynamic_reconfigure::BoolParameter bp;
-    bp.name = rb.name_;
-    bp.value = rb.getCurrentValue();
-    config_description.dflt.bools.push_back(bp);
-    bp.value = rb.max_value_;
-    config_description.max.bools.push_back(bp);
-    bp.value = rb.min_value_;
-    config_description.min.bools.push_back(bp);
-  }
-  for (unsigned int i = 0; i < registered_string_.size(); ++i)
-  {
-    const RegisteredParam<std::string> &rs = *registered_string_[i];
-    dynamic_reconfigure::ParamDescription p = rs.getParamDescription();
-
-    auto &gp = groups[rs.group_];
-    gp.parameters.push_back(p);
-
-    // Max min def
-    dynamic_reconfigure::StrParameter sp;
-    sp.name = rs.name_;
-    sp.value = rs.getCurrentValue();
-    config_description.dflt.strs.push_back(sp);
-    sp.value = rs.max_value_;
-    config_description.max.strs.push_back(sp);
-    sp.value = rs.min_value_;
-    config_description.min.strs.push_back(sp);
-  }
-
-  auto default_group = groups["Default"];
-  default_group.name = "Default";
-  config_description.groups.push_back(default_group);
-
-  dynamic_reconfigure::GroupState default_gs;
-  default_gs.name = "Default";
-  default_gs.state = true;
-  config_description.dflt.groups.push_back(default_gs);
-  config_description.min.groups.push_back(default_gs);
-  config_description.max.groups.push_back(default_gs);
-
-  size_t i = 1;
-  for (auto &group : groups)
-  {
-    if (group.first == "Default")
-    {
-      continue;
-    }
-    group.second.name = group.first;
-    group.second.type = "tab";
-    group.second.id = i++;
-    config_description.groups.push_back(group.second);
-
-    dynamic_reconfigure::GroupState gs;
-    gs.id = group.second.id;
-    gs.name = group.second.name;
-    gs.state = true;
-    config_description.dflt.groups.push_back(gs);
-    config_description.min.groups.push_back(gs);
-    config_description.max.groups.push_back(gs);
-  }
-  return config_description;
-}
-
-
 dynamic_reconfigure::Config DDynamicReconfigure::generateConfig()
 {
   dynamic_reconfigure::Config c;
@@ -469,10 +439,10 @@ dynamic_reconfigure::Config DDynamicReconfigure::generateConfig()
     c.strs.push_back(bs);
   }
 
-  for (size_t i = 0; i < config_groups_.size(); ++i)
+  for (size_t i = 0; i < config_description.groups.size(); ++i)
   {
     dynamic_reconfigure::GroupState gs;
-    gs.name = config_groups_[i];
+    gs.name = config_description.groups[i].name;
     gs.id = i;
     gs.state = true;
     c.groups.push_back(gs);
